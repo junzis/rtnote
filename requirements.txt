@@ -1,2 +1,4 @@
-pydub
+numpy
+matplotlib
 easygui
+simpleaudio
