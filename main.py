@@ -2,10 +2,9 @@ import numpy as np
 import simpleaudio as sa
 import tkinter as tk
 import wave
-import matplotlib
+import time
+import threading
 from easygui import fileopenbox
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
-from matplotlib.figure import Figure
 
 
 class MainUI(object):
@@ -31,16 +30,31 @@ class MainUI(object):
         self.btn_play = tk.Button(self.uiroot, text="Play", command=self.toggle_audio)
         self.btn_play.place(x=80, y=10)
 
-    def update_signal(self):
-        fig = Figure(figsize=(10, 3))
-        p = fig.add_subplot(111)
-        p.plot(self.signal)
-        self.canvas = FigureCanvasTkAgg(fig, master=self.uiroot)
-        self.canvas.get_tk_widget().place(x=10, y=80)
-        self.canvas.draw()
+        t1 = threading.Thread(target=self.check_audio)
+        t1.setDaemon(True)
+        t1.start()
 
-        self.toolbar = NavigationToolbar2Tk(self.canvas, self.uiroot)
-        self.toolbar.update()
+        # self.update_signal()
+
+    def update_signal(self):
+
+        cw = 980
+        ch = 200
+        self.canvas = tk.Canvas(self.uiroot, bg="white", width=cw, height=ch)
+
+        y = self.signal
+        n = len(y)
+        y = y / max(y) * ch * 0.3 + ch / 2
+
+        x = np.linspace(0, cw, n)
+
+        coords = np.zeros(n * 2)
+        coords[::2] = x
+        coords[1::2] = y
+
+        self.canvas.create_line(*coords)
+
+        self.canvas.place(x=10, y=80)
 
     def start(self):
         self.uiroot.mainloop()
@@ -70,10 +84,16 @@ class MainUI(object):
 
         if self.player and self.player.is_playing():
             self.player.stop()
-            self.btn_play.config(text="Play")
         else:
             self.player = self.wave.play()
-            self.btn_play.config(text="Stop")
+
+    def check_audio(self):
+        while True:
+            if self.player and self.player.is_playing():
+                self.btn_play.config(text="Stop")
+            else:
+                self.btn_play.config(text="Play")
+            time.sleep(0.2)
 
 
 if __name__ == "__main__":
