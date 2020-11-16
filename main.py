@@ -1,10 +1,14 @@
 import numpy as np
 import simpleaudio as sa
+import soundfile as sf
 import tkinter as tk
 import wave
 import time
 import threading
 from easygui import fileopenbox
+
+canvas_width = 980
+canvas_height = 200
 
 
 class MainUI(object):
@@ -13,9 +17,12 @@ class MainUI(object):
 
         self.file = None
         self.player = None
-        self.wave = None
+        self.audio = None
+        self.segment = None
 
         self.uiroot = tk.Tk()
+        self.select = None  # canvas selection object
+
         self.populate_ui()
 
     def populate_ui(self):
@@ -34,25 +41,64 @@ class MainUI(object):
         t1.setDaemon(True)
         t1.start()
 
-        # self.update_signal()
+        # load test audio, save time
+        self.open_audio("samples/rec-1.wav")
 
-    def update_signal(self):
+    def update_canvas(self):
+        def mouse_down(event):
+            self.selection_start = event.x
 
-        cw = 980
-        ch = 200
-        self.canvas = tk.Canvas(self.uiroot, bg="white", width=cw, height=ch)
+        def mouse_drag(event):
+            self.selection_end = event.x
 
-        y = self.signal
+            if self.select:
+                self.canvas.delete(self.select)
+
+            self.select = self.canvas.create_rectangle(
+                self.selection_start,
+                1,
+                event.x,
+                canvas_height,
+                fill="green",
+                outline="black",
+                stipple="gray50",
+            )
+
+        def mouse_up(event):
+            self.selection_end = event.x
+            print(self.selection_start, self.selection_end)
+
+            if self.selection_end == self.selection_start:
+                if self.select:
+                    self.canvas.delete(self.select)
+                self.segment = None
+
+            else:
+                s0 = min(self.selection_start, self.selection_end)
+                s1 = max(self.selection_start, self.selection_end)
+                i0 = int(s0 / canvas_width * len(self.audio))
+                i1 = int(s1 / canvas_width * len(self.audio))
+                self.segment = self.audio[i0:i1]
+
+        self.canvas = tk.Canvas(
+            self.uiroot, bg="white", width=canvas_width, height=canvas_height
+        )
+
+        y = self.audio
         n = len(y)
-        y = y / max(y) * ch * 0.3 + ch / 2
+        y = y / max(y) * canvas_height * 0.3 + canvas_height / 2
 
-        x = np.linspace(0, cw, n)
+        x = np.linspace(0, canvas_width, n)
 
         coords = np.zeros(n * 2)
         coords[::2] = x
         coords[1::2] = y
 
-        self.canvas.create_line(*coords)
+        self.soundtrack = self.canvas.create_line(*coords)
+
+        self.canvas.bind("<Button-1>", mouse_down)
+        self.canvas.bind("<B1-Motion>", mouse_drag)
+        self.canvas.bind("<ButtonRelease-1>", mouse_up)
 
         self.canvas.place(x=10, y=80)
 
@@ -63,21 +109,26 @@ class MainUI(object):
         self.uiroot.destroy()
         self.uiroot.quit()
 
-    def open_audio(self):
+    def open_audio(self, file=None):
 
-        self.file = fileopenbox()
+        if file is None:
+            self.file = fileopenbox()
+        else:
+            self.file = file
+
         print("selected audio: ", self.file)
 
-        self.wave = sa.WaveObject.from_wave_file(self.file)
-        sample_rate = self.wave.sample_rate
-        num_channels = self.wave.num_channels
-        print("Number of channels: ", num_channels)
-        print("Sample rate: ", sample_rate)
+        with sf.SoundFile(self.file) as f:
+            print("Format: ", f.format)
+            print("Sample rate: ", f.samplerate)
+            print("Channels: ", f.channels)
+            self.samplerate = f.samplerate
+            data = f.read()
 
-        self.signal = np.frombuffer(
-            wave.open(self.file, "r").readframes(-1), dtype="int16"
-        )
-        self.update_signal()
+            # covert to simpleaudio format
+            self.audio = (data * 32767 / max(abs(data))).astype(np.int16)
+
+        self.update_canvas()
 
     def toggle_audio(self):
         print("toggle playing audio: ", self.file)
@@ -85,7 +136,10 @@ class MainUI(object):
         if self.player and self.player.is_playing():
             self.player.stop()
         else:
-            self.player = self.wave.play()
+            if self.segment is None:
+                self.player = sa.play_buffer(self.audio, 1, 2, self.samplerate)
+            else:
+                self.player = sa.play_buffer(self.segment, 1, 2, self.samplerate)
 
     def check_audio(self):
         while True:
