@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import simpleaudio as sa
 import soundfile as sf
@@ -7,7 +8,7 @@ import time
 import threading
 from easygui import fileopenbox
 
-canvas_width = 980
+canvas_width = 1200
 canvas_height = 200
 
 
@@ -28,14 +29,22 @@ class MainUI(object):
     def populate_ui(self):
         self.uiroot.protocol("WM_DELETE_WINDOW", self.shutdown)
         self.uiroot.minsize(300, 300)
-        self.uiroot.geometry("1000x500")
-        self.uiroot.wm_title("ATC audio player")
+        self.uiroot.geometry("1220x400+300+300")
+        self.uiroot.wm_title("ATC audio transcript")
 
         self.btn_open = tk.Button(self.uiroot, text="Open", command=self.open_audio)
         self.btn_open.place(x=10, y=10)
 
         self.btn_play = tk.Button(self.uiroot, text="Play", command=self.toggle_audio)
         self.btn_play.place(x=80, y=10)
+
+        self.entry_cmd = tk.Entry(self.uiroot, font=("Serif", 12))
+        self.entry_cmd.place(x=10, y=250, height=30, width=300)
+
+        self.btn_save = tk.Button(
+            self.uiroot, text="Save transcript", command=self.save_transcript
+        )
+        self.btn_save.place(x=10, y=290)
 
         t1 = threading.Thread(target=self.check_audio)
         t1.setDaemon(True)
@@ -46,6 +55,7 @@ class MainUI(object):
 
     def update_canvas(self):
         def mouse_down(event):
+            # start draging
             self.selection_start = event.x
 
         def mouse_drag(event):
@@ -65,8 +75,8 @@ class MainUI(object):
             )
 
         def mouse_up(event):
+            # draging completed
             self.selection_end = event.x
-            print(self.selection_start, self.selection_end)
 
             if self.selection_end == self.selection_start:
                 if self.select:
@@ -74,11 +84,44 @@ class MainUI(object):
                 self.segment = None
 
             else:
+                # drag can be in both directions
                 s0 = min(self.selection_start, self.selection_end)
                 s1 = max(self.selection_start, self.selection_end)
-                i0 = int(s0 / canvas_width * len(self.audio))
-                i1 = int(s1 / canvas_width * len(self.audio))
-                self.segment = self.audio[i0:i1]
+
+                self.seg_idx_start = int(s0 / canvas_width * len(self.audio))
+                self.seg_idx_end = int(s1 / canvas_width * len(self.audio))
+
+                self.seg_t_start = round(self.seg_idx_start / self.samplerate, 3)
+                self.seg_t_end = round(self.seg_idx_end / self.samplerate, 3)
+
+                self.segment = self.audio[self.seg_idx_start : self.seg_idx_end]
+
+                print()
+                print(
+                    "Canvas selection: \t {} - {}".format(
+                        self.selection_start, self.selection_end
+                    )
+                )
+
+                print(
+                    "Audio segment index: \t {} - {}".format(
+                        self.seg_idx_start, self.seg_idx_end
+                    )
+                )
+
+                print(
+                    "Audio segment time: \t {} s - {} s".format(
+                        self.seg_t_start, self.seg_t_end
+                    )
+                )
+
+            if self.player and self.player.is_playing():
+                self.player.stop()
+
+            if self.segment is not None:
+                self.player = sa.play_buffer(self.segment, 1, 2, self.samplerate)
+
+            self.entry_cmd.delete(0, tk.END)
 
         self.canvas = tk.Canvas(
             self.uiroot, bg="white", width=canvas_width, height=canvas_height
@@ -100,7 +143,7 @@ class MainUI(object):
         self.canvas.bind("<B1-Motion>", mouse_drag)
         self.canvas.bind("<ButtonRelease-1>", mouse_up)
 
-        self.canvas.place(x=10, y=80)
+        self.canvas.place(x=10, y=40)
 
     def start(self):
         self.uiroot.mainloop()
@@ -148,6 +191,11 @@ class MainUI(object):
             else:
                 self.btn_play.config(text="Play")
             time.sleep(0.2)
+
+    def save_transcript(self):
+        text = self.entry_cmd.get().lower()
+        if (self.segment is not None) and (text != ""):
+            print(text, os.path.basename(self.file), self.seg_t_start, self.seg_t_end)
 
 
 if __name__ == "__main__":
